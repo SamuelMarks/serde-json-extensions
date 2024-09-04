@@ -1,7 +1,7 @@
 use core::fmt;
 
 use serde::de::{MapAccess, SeqAccess, Visitor};
-use serde::{de, Deserialize};
+use serde::Deserialize;
 use serde_json::{Map, Number};
 
 use crate::scalar_value::ScalarValue;

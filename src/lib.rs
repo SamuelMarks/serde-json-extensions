@@ -1,3 +1,4 @@
+#[path = "common/lib.rs"]
 pub(crate) mod common;
 
 #[path = "scalar_value_or_array/scalar_value_or_array.rs"]
