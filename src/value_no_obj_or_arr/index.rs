@@ -52,57 +52,26 @@ pub trait Index: private::Sealed {
 }
 
 impl Index for usize {
-    fn index_into<'v>(&self, v: &'v ValueNoObjOrArr) -> Option<&'v ValueNoObjOrArr> {
-        match v {
-            ValueNoObjOrArr::Array(vec) => vec.get(*self),
-            _ => None,
-        }
+    fn index_into<'v>(&self, _: &'v ValueNoObjOrArr) -> Option<&'v ValueNoObjOrArr> {
+        unimplemented!()
     }
-    fn index_into_mut<'v>(&self, v: &'v mut ValueNoObjOrArr) -> Option<&'v mut ValueNoObjOrArr> {
-        match v {
-            ValueNoObjOrArr::Array(vec) => vec.get_mut(*self),
-            _ => None,
-        }
+    fn index_into_mut<'v>(&self, _: &'v mut ValueNoObjOrArr) -> Option<&'v mut ValueNoObjOrArr> {
+        unimplemented!()
     }
-    fn index_or_insert<'v>(&self, v: &'v mut ValueNoObjOrArr) -> &'v mut ValueNoObjOrArr {
-        match v {
-            ValueNoObjOrArr::Array(vec) => {
-                let len = vec.len();
-                vec.get_mut(*self).unwrap_or_else(|| {
-                    panic!(
-                        "cannot access index {} of JSON array of length {}",
-                        self, len
-                    )
-                })
-            }
-            _ => panic!("cannot access index {} of JSON {}", self, Type(v)),
-        }
+    fn index_or_insert<'v>(&self, _: &'v mut ValueNoObjOrArr) -> &'v mut ValueNoObjOrArr {
+        unimplemented!()
     }
 }
 
 impl Index for str {
-    fn index_into<'v>(&self, v: &'v ValueNoObjOrArr) -> Option<&'v ValueNoObjOrArr> {
-        match v {
-            ValueNoObjOrArr::Object(map) => map.get(self),
-            _ => None,
-        }
+    fn index_into<'v>(&self, _: &'v ValueNoObjOrArr) -> Option<&'v ValueNoObjOrArr> {
+        unimplemented!()
     }
-    fn index_into_mut<'v>(&self, v: &'v mut ValueNoObjOrArr) -> Option<&'v mut ValueNoObjOrArr> {
-        match v {
-            ValueNoObjOrArr::Object(map) => map.get_mut(self),
-            _ => None,
-        }
+    fn index_into_mut<'v>(&self, _: &'v mut ValueNoObjOrArr) -> Option<&'v mut ValueNoObjOrArr> {
+        unimplemented!()
     }
-    fn index_or_insert<'v>(&self, v: &'v mut ValueNoObjOrArr) -> &'v mut ValueNoObjOrArr {
-        if let ValueNoObjOrArr::Null = v {
-            *v = ValueNoObjOrArr::Object(Map::new());
-        }
-        match v {
-            ValueNoObjOrArr::Object(map) => {
-                map.entry(self.to_owned()).or_insert(ValueNoObjOrArr::Null)
-            }
-            _ => panic!("cannot access key {:?} in JSON {}", self, Type(v)),
-        }
+    fn index_or_insert<'v>(&self, _: &'v mut ValueNoObjOrArr) -> &'v mut ValueNoObjOrArr {
+        unimplemented!()
     }
 }
 
@@ -152,8 +121,6 @@ impl<'a> Display for Type<'a> {
             ValueNoObjOrArr::Bool(_) => formatter.write_str("boolean"),
             ValueNoObjOrArr::Number(_) => formatter.write_str("number"),
             ValueNoObjOrArr::String(_) => formatter.write_str("string"),
-            ValueNoObjOrArr::Array(_) => formatter.write_str("array"),
-            ValueNoObjOrArr::Object(_) => formatter.write_str("object"),
         }
     }
 }

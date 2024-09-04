@@ -1,12 +1,14 @@
-use crate::error::{Error, ErrorCode, Result};
-use crate::map::Map;
-use crate::value_no_obj_or_arr::{to_value, ValueNoObjOrArr};
 use alloc::borrow::ToOwned;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt::Display;
 use core::result;
+
 use serde::ser::{Impossible, Serialize};
+
+use crate::error::{Error, ErrorCode, Result};
+use crate::map::Map;
+use crate::{to_value, ValueNoObjOrArr};
 
 impl Serialize for ValueNoObjOrArr {
     #[inline]
@@ -23,24 +25,24 @@ impl Serialize for ValueNoObjOrArr {
     }
 }
 
-/// Serializer whose output is a `Value`.
+/// Serializer whose output is a `ValueNoObjOrArr`.
 ///
 /// This is the serializer that backs [`serde_json::to_value`][crate::to_value].
 /// Unlike the main serde_json serializer which goes from some serializable
 /// value of type `T` to JSON text, this one goes from `T` to
-/// `serde_json::Value`.
+/// `serde_json::ValueNoObjOrArr`.
 ///
 /// The `to_value` function is implementable as:
 ///
 /// ```
 /// use serde::Serialize;
-/// use serde_json::{Error, Value};
+/// use serde_json_extensions::{Error, ValueNoObjOrArr};
 ///
 /// pub fn to_value<T>(input: T) -> Result<Value, Error>
 /// where
 ///     T: Serialize,
 /// {
-///     input.serialize(serde_json::value::Serializer)
+///     input.serialize(serde_json_extensions::value::Serializer)
 /// }
 /// ```
 pub struct Serializer;
@@ -157,6 +159,13 @@ impl serde::Serializer for Serializer {
         Ok(ValueNoObjOrArr::String(value.to_owned()))
     }
 
+    fn serialize_bytes(self, value: &[u8]) -> Result<ValueNoObjOrArr> {
+        Err(serde::de::Error::invalid_type(
+            serde::de::Unexpected::Bytes(value),
+            &"must provide non-array | non-object",
+        ))
+    }
+
     #[inline]
     fn serialize_unit(self) -> Result<ValueNoObjOrArr> {
         Ok(ValueNoObjOrArr::Null)
@@ -183,6 +192,22 @@ impl serde::Serializer for Serializer {
         T: ?Sized + Serialize,
     {
         value.serialize(self)
+    }
+
+    fn serialize_newtype_variant<T>(
+        self,
+        _name: &'static str,
+        _variant_index: u32,
+        _variant: &'static str,
+        _value: &T,
+    ) -> Result<ValueNoObjOrArr>
+    where
+        T: ?Sized + Serialize,
+    {
+        Err(serde::de::Error::invalid_type(
+            serde::de::Unexpected::NewtypeStruct,
+            &"must provide non-array | non-object",
+        ))
     }
 
     #[inline]
@@ -292,6 +317,28 @@ pub struct SerializeStructVariant {
     map: Map<String, ValueNoObjOrArr>,
 }
 
+impl serde::ser::SerializeSeq for SerializeVec {
+    type Ok = ValueNoObjOrArr;
+    type Error = Error;
+
+    fn serialize_element<T>(&mut self, _value: &T) -> Result<()>
+    where
+        T: ?Sized + Serialize,
+    {
+        Err(serde::de::Error::invalid_type(
+            serde::de::Unexpected::Seq,
+            &"must provide non-array | non-object",
+        ))
+    }
+
+    fn end(self) -> Result<ValueNoObjOrArr> {
+        Err(serde::de::Error::invalid_type(
+            serde::de::Unexpected::Seq,
+            &"must provide non-array | non-object",
+        ))
+    }
+}
+
 impl serde::ser::SerializeTuple for SerializeVec {
     type Ok = ValueNoObjOrArr;
     type Error = Error;
@@ -321,6 +368,82 @@ impl serde::ser::SerializeTupleStruct for SerializeVec {
 
     fn end(self) -> Result<ValueNoObjOrArr> {
         serde::ser::SerializeSeq::end(self)
+    }
+}
+
+impl serde::ser::SerializeTupleVariant for SerializeTupleVariant {
+    type Ok = ValueNoObjOrArr;
+    type Error = Error;
+
+    fn serialize_field<T>(&mut self, _value: &T) -> Result<()>
+    where
+        T: ?Sized + Serialize,
+    {
+        Err(serde::de::Error::invalid_type(
+            serde::de::Unexpected::Map,
+            &"must provide non-array | non-object",
+        ))
+    }
+
+    fn end(self) -> Result<ValueNoObjOrArr> {
+        Err(serde::de::Error::invalid_type(
+            serde::de::Unexpected::Map,
+            &"must provide non-array | non-object",
+        ))
+    }
+}
+
+impl serde::ser::SerializeMap for SerializeMap {
+    type Ok = ValueNoObjOrArr;
+    type Error = Error;
+
+    fn serialize_key<T>(&mut self, key: &T) -> Result<()>
+    where
+        T: ?Sized + Serialize,
+    {
+        match self {
+            SerializeMap::Map { next_key, .. } => {
+                *next_key = Some(tri!(key.serialize(MapKeySerializer)));
+                Ok(())
+            }
+            #[cfg(feature = "arbitrary_precision")]
+            SerializeMap::Number { .. } => unreachable!(),
+            #[cfg(feature = "raw_value")]
+            SerializeMap::RawValue { .. } => unreachable!(),
+        }
+    }
+
+    fn serialize_value<T>(&mut self, value: &T) -> Result<()>
+    where
+        T: ?Sized + Serialize,
+    {
+        match self {
+            SerializeMap::Map { map, next_key } => {
+                let key = next_key.take();
+                // Panic because this indicates a bug in the program rather than an
+                // expected failure.
+                let key = key.expect("serialize_value called before serialize_key");
+                map.insert(key, tri!(to_value(value)));
+                Ok(())
+            }
+            #[cfg(feature = "arbitrary_precision")]
+            SerializeMap::Number { .. } => unreachable!(),
+            #[cfg(feature = "raw_value")]
+            SerializeMap::RawValue { .. } => unreachable!(),
+        }
+    }
+
+    fn end(self) -> Result<ValueNoObjOrArr> {
+        match self {
+            SerializeMap::Map { .. } => Err(serde::de::Error::invalid_type(
+                serde::de::Unexpected::Map,
+                &"must provide non-array | non-object",
+            )),
+            #[cfg(feature = "arbitrary_precision")]
+            SerializeMap::Number { .. } => unreachable!(),
+            #[cfg(feature = "raw_value")]
+            SerializeMap::RawValue { .. } => unreachable!(),
+        }
     }
 }
 
@@ -515,6 +638,74 @@ impl serde::Serializer for MapKeySerializer {
         T: ?Sized + Display,
     {
         Ok(value.to_string())
+    }
+}
+
+impl serde::ser::SerializeStruct for SerializeMap {
+    type Ok = ValueNoObjOrArr;
+    type Error = Error;
+
+    fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<()>
+    where
+        T: ?Sized + Serialize,
+    {
+        match self {
+            SerializeMap::Map { .. } => serde::ser::SerializeMap::serialize_entry(self, key, value),
+            #[cfg(feature = "arbitrary_precision")]
+            SerializeMap::Number { out_value } => {
+                if key == crate::number::TOKEN {
+                    *out_value = Some(tri!(value.serialize(NumberValueEmitter)));
+                    Ok(())
+                } else {
+                    Err(invalid_number())
+                }
+            }
+            #[cfg(feature = "raw_value")]
+            SerializeMap::RawValue { out_value } => {
+                if key == crate::raw::TOKEN {
+                    *out_value = Some(tri!(value.serialize(RawValueEmitter)));
+                    Ok(())
+                } else {
+                    Err(invalid_raw_value())
+                }
+            }
+        }
+    }
+
+    fn end(self) -> Result<ValueNoObjOrArr> {
+        match self {
+            SerializeMap::Map { .. } => serde::ser::SerializeMap::end(self),
+            #[cfg(feature = "arbitrary_precision")]
+            SerializeMap::Number { out_value, .. } => {
+                Ok(out_value.expect("number value was not emitted"))
+            }
+            #[cfg(feature = "raw_value")]
+            SerializeMap::RawValue { out_value, .. } => {
+                Ok(out_value.expect("raw value was not emitted"))
+            }
+        }
+    }
+}
+
+impl serde::ser::SerializeStructVariant for SerializeStructVariant {
+    type Ok = ValueNoObjOrArr;
+    type Error = Error;
+
+    fn serialize_field<T>(&mut self, _key: &'static str, _value: &T) -> Result<()>
+    where
+        T: ?Sized + Serialize,
+    {
+        Err(serde::de::Error::invalid_type(
+            serde::de::Unexpected::Map,
+            &"must provide non-array | non-object",
+        ))
+    }
+
+    fn end(self) -> Result<ValueNoObjOrArr> {
+        Err(serde::de::Error::invalid_type(
+            serde::de::Unexpected::Map,
+            &"must provide non-array | non-object",
+        ))
     }
 }
 

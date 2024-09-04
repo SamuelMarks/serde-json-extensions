@@ -162,8 +162,8 @@ impl From<Map<String, ValueNoObjOrArr>> for ValueNoObjOrArr {
     /// m.insert("Lorem".to_string(), "ipsum".into());
     /// let x: Value = m.into();
     /// ```
-    fn from(f: Map<String, ValueNoObjOrArr>) -> Self {
-        ValueNoObjOrArr::Object(f)
+    fn from(_: Map<String, ValueNoObjOrArr>) -> Self {
+        unimplemented!()
     }
 }
 
@@ -178,8 +178,8 @@ impl<T: Into<ValueNoObjOrArr>> From<Vec<T>> for ValueNoObjOrArr {
     /// let v = vec!["lorem", "ipsum", "dolor"];
     /// let x: Value = v.into();
     /// ```
-    fn from(f: Vec<T>) -> Self {
-        ValueNoObjOrArr::Array(f.into_iter().map(Into::into).collect())
+    fn from(_: Vec<T>) -> Self {
+        unimplemented!()
     }
 }
 
@@ -194,8 +194,8 @@ impl<T: Clone + Into<ValueNoObjOrArr>> From<&[T]> for ValueNoObjOrArr {
     /// let v: &[&str] = &["lorem", "ipsum", "dolor"];
     /// let x: Value = v.into();
     /// ```
-    fn from(f: &[T]) -> Self {
-        ValueNoObjOrArr::Array(f.iter().cloned().map(Into::into).collect())
+    fn from(_: &[T]) -> Self {
+        unimplemented!()
     }
 }
 
@@ -224,8 +224,8 @@ impl<T: Into<ValueNoObjOrArr>> FromIterator<T> for ValueNoObjOrArr {
     ///
     /// let x: Value = Value::from_iter(vec!["lorem", "ipsum", "dolor"]);
     /// ```
-    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
-        ValueNoObjOrArr::Array(iter.into_iter().map(Into::into).collect())
+    fn from_iter<I: IntoIterator<Item = T>>(_: I) -> Self {
+        unimplemented!()
     }
 }
 
@@ -240,12 +240,8 @@ impl<K: Into<String>, V: Into<ValueNoObjOrArr>> FromIterator<(K, V)> for ValueNo
     /// let v: Vec<_> = vec![("lorem", 40), ("ipsum", 2)];
     /// let x: Value = v.into_iter().collect();
     /// ```
-    fn from_iter<I: IntoIterator<Item = (K, V)>>(iter: I) -> Self {
-        ValueNoObjOrArr::Object(
-            iter.into_iter()
-                .map(|(k, v)| (k.into(), v.into()))
-                .collect(),
-        )
+    fn from_iter<I: IntoIterator<Item = (K, V)>>(_: I) -> Self {
+        unimplemented!()
     }
 }
 

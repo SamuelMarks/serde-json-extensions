@@ -6,7 +6,6 @@
 //! [`BTreeMap`]: https://doc.rust-lang.org/std/collections/struct.BTreeMap.html
 //! [`IndexMap`]: https://docs.rs/indexmap/*/indexmap/map/struct.IndexMap.html
 
-use crate::value_no_obj_or_arr::ValueNoObjOrArr;
 use alloc::string::String;
 #[cfg(feature = "preserve_order")]
 use alloc::vec::Vec;
@@ -17,12 +16,16 @@ use core::iter::FusedIterator;
 #[cfg(feature = "preserve_order")]
 use core::mem;
 use core::ops;
+
 use serde::de;
 
 #[cfg(not(feature = "preserve_order"))]
 use alloc::collections::{btree_map, BTreeMap};
+
 #[cfg(feature = "preserve_order")]
 use indexmap::IndexMap;
+
+use crate::value_no_obj_or_arr::ValueNoObjOrArr;
 
 /// Represents a JSON key/value type.
 pub struct Map<K, V> {

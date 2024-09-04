@@ -103,17 +103,13 @@ impl<'de> Deserialize<'de> for ValueNoObjOrArr {
                         let value = tri!(visitor.next_value_seed(crate::raw::BoxedFromString));
                         crate::from_str(value.get()).map_err(de::Error::custom)
                     }
-                    Some(KeyClass::Map(first_key)) => {
-                        let mut values = Map::new();
-
-                        values.insert(first_key, tri!(visitor.next_value()));
-                        while let Some((key, value)) = tri!(visitor.next_entry()) {
-                            values.insert(key, value);
-                        }
-
-                        Ok(ValueNoObjOrArr::Object(values))
+                    Some(KeyClass::Map(_first_key)) => {
+                        Err(serde::de::Error::invalid_type(Unexpected::Map, &"non map"))
                     }
-                    None => Ok(ValueNoObjOrArr::Object(Map::new())),
+                    None => Err(serde::de::Error::invalid_type(
+                        Unexpected::Other(""),
+                        &"must provide non-array | non-object",
+                    )),
                 }
             }
         }
@@ -207,8 +203,6 @@ impl<'de> serde::Deserializer<'de> for ValueNoObjOrArr {
             ValueNoObjOrArr::String(v) => visitor.visit_string(v),
             #[cfg(not(any(feature = "std", feature = "alloc")))]
             ValueNoObjOrArr::String(_) => unreachable!(),
-            ValueNoObjOrArr::Array(v) => visit_array(v, visitor),
-            ValueNoObjOrArr::Object(v) => visit_object(v, visitor),
         }
     }
 
@@ -247,26 +241,6 @@ impl<'de> serde::Deserializer<'de> for ValueNoObjOrArr {
         V: Visitor<'de>,
     {
         let (variant, value) = match self {
-            ValueNoObjOrArr::Object(value) => {
-                let mut iter = value.into_iter();
-                let (variant, value) = match iter.next() {
-                    Some(v) => v,
-                    None => {
-                        return Err(serde::de::Error::invalid_value(
-                            Unexpected::Map,
-                            &"map with a single key",
-                        ));
-                    }
-                };
-                // enums are encoded in json as maps with a single key:value pair
-                if iter.next().is_some() {
-                    return Err(serde::de::Error::invalid_value(
-                        Unexpected::Map,
-                        &"map with a single key",
-                    ));
-                }
-                (variant, Some(value))
-            }
             ValueNoObjOrArr::String(variant) => (variant, None),
             other => {
                 return Err(serde::de::Error::invalid_type(
@@ -350,7 +324,6 @@ impl<'de> serde::Deserializer<'de> for ValueNoObjOrArr {
         match self {
             #[cfg(any(feature = "std", feature = "alloc"))]
             ValueNoObjOrArr::String(v) => visitor.visit_string(v),
-            ValueNoObjOrArr::Array(v) => visit_array(v, visitor),
             _ => Err(self.invalid_type(&visitor)),
         }
     }
@@ -376,10 +349,7 @@ impl<'de> serde::Deserializer<'de> for ValueNoObjOrArr {
     where
         V: Visitor<'de>,
     {
-        match self {
-            ValueNoObjOrArr::Array(v) => visit_array(v, visitor),
-            _ => Err(self.invalid_type(&visitor)),
-        }
+        Err(self.invalid_type(&visitor))
     }
 
     fn deserialize_tuple<V>(self, _len: usize, visitor: V) -> Result<V::Value, Error>
@@ -405,10 +375,7 @@ impl<'de> serde::Deserializer<'de> for ValueNoObjOrArr {
     where
         V: Visitor<'de>,
     {
-        match self {
-            ValueNoObjOrArr::Object(v) => visit_object(v, visitor),
-            _ => Err(self.invalid_type(&visitor)),
-        }
+        Err(self.invalid_type(&visitor))
     }
 
     fn deserialize_struct<V>(
@@ -420,11 +387,7 @@ impl<'de> serde::Deserializer<'de> for ValueNoObjOrArr {
     where
         V: Visitor<'de>,
     {
-        match self {
-            ValueNoObjOrArr::Array(v) => visit_array(v, visitor),
-            ValueNoObjOrArr::Object(v) => visit_object(v, visitor),
-            _ => Err(self.invalid_type(&visitor)),
-        }
+        Err(self.invalid_type(&visitor))
     }
 
     fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value, Error>
@@ -505,18 +468,11 @@ impl<'de> VariantAccess<'de> for VariantDeserializer {
         }
     }
 
-    fn tuple_variant<V>(self, _len: usize, visitor: V) -> Result<V::Value, Error>
+    fn tuple_variant<V>(self, _len: usize, _visitor: V) -> Result<V::Value, Error>
     where
         V: Visitor<'de>,
     {
         match self.value {
-            Some(ValueNoObjOrArr::Array(v)) => {
-                if v.is_empty() {
-                    visitor.visit_unit()
-                } else {
-                    visit_array(v, visitor)
-                }
-            }
             Some(other) => Err(serde::de::Error::invalid_type(
                 other.unexpected(),
                 &"tuple variant",
@@ -531,13 +487,12 @@ impl<'de> VariantAccess<'de> for VariantDeserializer {
     fn struct_variant<V>(
         self,
         _fields: &'static [&'static str],
-        visitor: V,
+        _visitor: V,
     ) -> Result<V::Value, Error>
     where
         V: Visitor<'de>,
     {
         match self.value {
-            Some(ValueNoObjOrArr::Object(v)) => visit_object(v, visitor),
             Some(other) => Err(serde::de::Error::invalid_type(
                 other.unexpected(),
                 &"struct variant",
@@ -711,8 +666,6 @@ impl<'de> serde::Deserializer<'de> for &'de ValueNoObjOrArr {
             ValueNoObjOrArr::Bool(v) => visitor.visit_bool(*v),
             ValueNoObjOrArr::Number(n) => n.deserialize_any(visitor),
             ValueNoObjOrArr::String(v) => visitor.visit_borrowed_str(v),
-            ValueNoObjOrArr::Array(v) => visit_array_ref(v, visitor),
-            ValueNoObjOrArr::Object(v) => visit_object_ref(v, visitor),
         }
     }
 
@@ -749,26 +702,6 @@ impl<'de> serde::Deserializer<'de> for &'de ValueNoObjOrArr {
         V: Visitor<'de>,
     {
         let (variant, value) = match self {
-            ValueNoObjOrArr::Object(value) => {
-                let mut iter = value.into_iter();
-                let (variant, value) = match iter.next() {
-                    Some(v) => v,
-                    None => {
-                        return Err(serde::de::Error::invalid_value(
-                            Unexpected::Map,
-                            &"map with a single key",
-                        ));
-                    }
-                };
-                // enums are encoded in json as maps with a single key:value pair
-                if iter.next().is_some() {
-                    return Err(serde::de::Error::invalid_value(
-                        Unexpected::Map,
-                        &"map with a single key",
-                    ));
-                }
-                (variant, Some(value))
-            }
             ValueNoObjOrArr::String(variant) => (variant, None),
             other => {
                 return Err(serde::de::Error::invalid_type(
@@ -843,7 +776,6 @@ impl<'de> serde::Deserializer<'de> for &'de ValueNoObjOrArr {
     {
         match self {
             ValueNoObjOrArr::String(v) => visitor.visit_borrowed_str(v),
-            ValueNoObjOrArr::Array(v) => visit_array_ref(v, visitor),
             _ => Err(self.invalid_type(&visitor)),
         }
     }
@@ -876,10 +808,7 @@ impl<'de> serde::Deserializer<'de> for &'de ValueNoObjOrArr {
     where
         V: Visitor<'de>,
     {
-        match self {
-            ValueNoObjOrArr::Array(v) => visit_array_ref(v, visitor),
-            _ => Err(self.invalid_type(&visitor)),
-        }
+        Err(self.invalid_type(&visitor))
     }
 
     fn deserialize_tuple<V>(self, _len: usize, visitor: V) -> Result<V::Value, Error>
@@ -905,10 +834,7 @@ impl<'de> serde::Deserializer<'de> for &'de ValueNoObjOrArr {
     where
         V: Visitor<'de>,
     {
-        match self {
-            ValueNoObjOrArr::Object(v) => visit_object_ref(v, visitor),
-            _ => Err(self.invalid_type(&visitor)),
-        }
+        Err(self.invalid_type(&visitor))
     }
 
     fn deserialize_struct<V>(
@@ -920,11 +846,7 @@ impl<'de> serde::Deserializer<'de> for &'de ValueNoObjOrArr {
     where
         V: Visitor<'de>,
     {
-        match self {
-            ValueNoObjOrArr::Array(v) => visit_array_ref(v, visitor),
-            ValueNoObjOrArr::Object(v) => visit_object_ref(v, visitor),
-            _ => Err(self.invalid_type(&visitor)),
-        }
+        Err(self.invalid_type(&visitor))
     }
 
     fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value, Error>
@@ -988,18 +910,11 @@ impl<'de> VariantAccess<'de> for VariantRefDeserializer<'de> {
         }
     }
 
-    fn tuple_variant<V>(self, _len: usize, visitor: V) -> Result<V::Value, Error>
+    fn tuple_variant<V>(self, _len: usize, _visitor: V) -> Result<V::Value, Error>
     where
         V: Visitor<'de>,
     {
         match self.value {
-            Some(ValueNoObjOrArr::Array(v)) => {
-                if v.is_empty() {
-                    visitor.visit_unit()
-                } else {
-                    visit_array_ref(v, visitor)
-                }
-            }
             Some(other) => Err(serde::de::Error::invalid_type(
                 other.unexpected(),
                 &"tuple variant",
@@ -1014,13 +929,12 @@ impl<'de> VariantAccess<'de> for VariantRefDeserializer<'de> {
     fn struct_variant<V>(
         self,
         _fields: &'static [&'static str],
-        visitor: V,
+        _visitor: V,
     ) -> Result<V::Value, Error>
     where
         V: Visitor<'de>,
     {
         match self.value {
-            Some(ValueNoObjOrArr::Object(v)) => visit_object_ref(v, visitor),
             Some(other) => Err(serde::de::Error::invalid_type(
                 other.unexpected(),
                 &"struct variant",
@@ -1303,8 +1217,6 @@ impl ValueNoObjOrArr {
             ValueNoObjOrArr::Bool(b) => Unexpected::Bool(*b),
             ValueNoObjOrArr::Number(n) => n.unexpected(),
             ValueNoObjOrArr::String(s) => Unexpected::Str(s),
-            ValueNoObjOrArr::Array(_) => Unexpected::Seq,
-            ValueNoObjOrArr::Object(_) => Unexpected::Map,
         }
     }
 }
