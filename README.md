@@ -5,7 +5,7 @@ serde-json-extensions
 A few useful extensions that the [`serde_json`](https://github.com/serde-rs/json) people probably don't want. Including:
 
   - `ValueNoObjOrArr` [`serde_json::value::Value`](https://docs.rs/serde_json/latest/serde_json/value/enum.Value.html) without object or array discriminant
-  - `ScalarOrArrayValue` [`serde_json::value::Value`](https://docs.rs/serde_json/latest/serde_json/value/enum.Value.html) without object discriminant
+  - `ValueNoObj` [`serde_json::value::Value`](https://docs.rs/serde_json/latest/serde_json/value/enum.Value.html) without object discriminant
 
 FYI: Code is [heavily] taken from [`serde_json`](https://github.com/serde-rs/json) @ [`27a4ca9`](https://github.com/serde-rs/json/tree/27a4ca9d7a62394fe8f0103f3d91de59f055a4c4).
 

@@ -1,54 +1,55 @@
+use crate::error::{Error, ErrorCode, Result};
+use crate::value_no_obj::Map;
+use crate::value_no_obj::{to_value, ValueNoObj};
 use alloc::borrow::ToOwned;
 use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 use core::fmt::Display;
 use core::result;
 use serde::de;
 use serde::de::Unexpected;
 use serde::ser::{Impossible, Serialize};
 
-use crate::error::{Error, ErrorCode, Result};
-use crate::map::Map;
-use crate::ValueNoObjOrArr;
-
-impl Serialize for ValueNoObjOrArr {
+impl Serialize for ValueNoObj {
     #[inline]
     fn serialize<S>(&self, serializer: S) -> result::Result<S::Ok, S::Error>
     where
         S: ::serde::Serializer,
     {
         match self {
-            ValueNoObjOrArr::Null => serializer.serialize_unit(),
-            ValueNoObjOrArr::Bool(b) => serializer.serialize_bool(*b),
-            ValueNoObjOrArr::Number(n) => n.serialize(serializer),
-            ValueNoObjOrArr::String(s) => serializer.serialize_str(s),
+            ValueNoObj::Null => serializer.serialize_unit(),
+            ValueNoObj::Bool(b) => serializer.serialize_bool(*b),
+            ValueNoObj::Number(n) => n.serialize(serializer),
+            ValueNoObj::String(s) => serializer.serialize_str(s),
+            ValueNoObj::Array(v) => v.serialize(serializer),
         }
     }
 }
 
-/// Serializer whose output is a `ValueNoObjOrArr`.
+/// Serializer whose output is a `ValueNoObj`.
 ///
 /// This is the serializer that backs [`serde_json::to_value`][crate::to_value].
 /// Unlike the main serde_json serializer which goes from some serializable
 /// value of type `T` to JSON text, this one goes from `T` to
-/// `serde_json::ValueNoObjOrArr`.
+/// `serde_json::ValueNoObj`.
 ///
 /// The `to_value` function is implementable as:
 ///
 /// ```
 /// use serde::Serialize;
-/// use serde_json_extensions::{Error, ValueNoObjOrArr};
+/// use serde_json::{Error, ValueNoObj};
 ///
-/// pub fn to_value<T>(input: T) -> Result<Value, Error>
+/// pub fn to_value<T>(input: T) -> Result<ValueNoObj, Error>
 /// where
 ///     T: Serialize,
 /// {
-///     input.serialize(serde_json_extensions::value::Serializer)
+///     input.serialize(serde_json::value::Serializer)
 /// }
 /// ```
 pub struct Serializer;
 
 impl serde::Serializer for Serializer {
-    type Ok = ValueNoObjOrArr;
+    type Ok = ValueNoObj;
     type Error = Error;
 
     type SerializeSeq = SerializeVec;
@@ -60,41 +61,41 @@ impl serde::Serializer for Serializer {
     type SerializeStructVariant = SerializeStructVariant;
 
     #[inline]
-    fn serialize_bool(self, value: bool) -> Result<ValueNoObjOrArr> {
-        Ok(ValueNoObjOrArr::Bool(value))
+    fn serialize_bool(self, value: bool) -> Result<ValueNoObj> {
+        Ok(ValueNoObj::Bool(value))
     }
 
     #[inline]
-    fn serialize_i8(self, value: i8) -> Result<ValueNoObjOrArr> {
+    fn serialize_i8(self, value: i8) -> Result<ValueNoObj> {
         self.serialize_i64(value as i64)
     }
 
     #[inline]
-    fn serialize_i16(self, value: i16) -> Result<ValueNoObjOrArr> {
+    fn serialize_i16(self, value: i16) -> Result<ValueNoObj> {
         self.serialize_i64(value as i64)
     }
 
     #[inline]
-    fn serialize_i32(self, value: i32) -> Result<ValueNoObjOrArr> {
+    fn serialize_i32(self, value: i32) -> Result<ValueNoObj> {
         self.serialize_i64(value as i64)
     }
 
-    fn serialize_i64(self, value: i64) -> Result<ValueNoObjOrArr> {
-        Ok(ValueNoObjOrArr::Number(value.into()))
+    fn serialize_i64(self, value: i64) -> Result<ValueNoObj> {
+        Ok(ValueNoObj::Number(value.into()))
     }
 
-    fn serialize_i128(self, value: i128) -> Result<ValueNoObjOrArr> {
+    fn serialize_i128(self, value: i128) -> Result<ValueNoObj> {
         #[cfg(feature = "arbitrary_precision")]
         {
-            Ok(ValueNoObjOrArr::Number(value.into()))
+            Ok(ValueNoObj::Number(value.into()))
         }
 
         #[cfg(not(feature = "arbitrary_precision"))]
         {
             if let Ok(value) = u64::try_from(value) {
-                Ok(ValueNoObjOrArr::Number(value.into()))
+                Ok(ValueNoObj::Number(value.into()))
             } else if let Ok(value) = i64::try_from(value) {
-                Ok(ValueNoObjOrArr::Number(value.into()))
+                Ok(ValueNoObj::Number(value.into()))
             } else {
                 Err(Error::syntax(ErrorCode::NumberOutOfRange, 0, 0))
             }
@@ -102,35 +103,35 @@ impl serde::Serializer for Serializer {
     }
 
     #[inline]
-    fn serialize_u8(self, value: u8) -> Result<ValueNoObjOrArr> {
+    fn serialize_u8(self, value: u8) -> Result<ValueNoObj> {
         self.serialize_u64(value as u64)
     }
 
     #[inline]
-    fn serialize_u16(self, value: u16) -> Result<ValueNoObjOrArr> {
+    fn serialize_u16(self, value: u16) -> Result<ValueNoObj> {
         self.serialize_u64(value as u64)
     }
 
     #[inline]
-    fn serialize_u32(self, value: u32) -> Result<ValueNoObjOrArr> {
+    fn serialize_u32(self, value: u32) -> Result<ValueNoObj> {
         self.serialize_u64(value as u64)
     }
 
     #[inline]
-    fn serialize_u64(self, value: u64) -> Result<ValueNoObjOrArr> {
-        Ok(ValueNoObjOrArr::Number(value.into()))
+    fn serialize_u64(self, value: u64) -> Result<ValueNoObj> {
+        Ok(ValueNoObj::Number(value.into()))
     }
 
-    fn serialize_u128(self, value: u128) -> Result<ValueNoObjOrArr> {
+    fn serialize_u128(self, value: u128) -> Result<ValueNoObj> {
         #[cfg(feature = "arbitrary_precision")]
         {
-            Ok(ValueNoObjOrArr::Number(value.into()))
+            Ok(ValueNoObj::Number(value.into()))
         }
 
         #[cfg(not(feature = "arbitrary_precision"))]
         {
             if let Ok(value) = u64::try_from(value) {
-                Ok(ValueNoObjOrArr::Number(value.into()))
+                Ok(ValueNoObj::Number(value.into()))
             } else {
                 Err(Error::syntax(ErrorCode::NumberOutOfRange, 0, 0))
             }
@@ -138,41 +139,42 @@ impl serde::Serializer for Serializer {
     }
 
     #[inline]
-    fn serialize_f32(self, float: f32) -> Result<ValueNoObjOrArr> {
-        Ok(ValueNoObjOrArr::from(float))
+    fn serialize_f32(self, float: f32) -> Result<ValueNoObj> {
+        Ok(ValueNoObj::from(float))
     }
 
     #[inline]
-    fn serialize_f64(self, float: f64) -> Result<ValueNoObjOrArr> {
-        Ok(ValueNoObjOrArr::from(float))
+    fn serialize_f64(self, float: f64) -> Result<ValueNoObj> {
+        Ok(ValueNoObj::from(float))
     }
 
     #[inline]
-    fn serialize_char(self, value: char) -> Result<ValueNoObjOrArr> {
+    fn serialize_char(self, value: char) -> Result<ValueNoObj> {
         let mut s = String::new();
         s.push(value);
-        Ok(ValueNoObjOrArr::String(s))
+        Ok(ValueNoObj::String(s))
     }
 
     #[inline]
-    fn serialize_str(self, value: &str) -> Result<ValueNoObjOrArr> {
-        Ok(ValueNoObjOrArr::String(value.to_owned()))
+    fn serialize_str(self, value: &str) -> Result<ValueNoObj> {
+        Ok(ValueNoObj::String(value.to_owned()))
     }
 
-    fn serialize_bytes(self, value: &[u8]) -> Result<ValueNoObjOrArr> {
-        Err(serde::de::Error::invalid_type(
-            serde::de::Unexpected::Bytes(value),
-            &"must provide non-array | non-object",
-        ))
-    }
-
-    #[inline]
-    fn serialize_unit(self) -> Result<ValueNoObjOrArr> {
-        Ok(ValueNoObjOrArr::Null)
+    fn serialize_bytes(self, value: &[u8]) -> Result<ValueNoObj> {
+        let vec = value
+            .iter()
+            .map(|&b| ValueNoObj::Number(b.into()))
+            .collect();
+        Ok(ValueNoObj::Array(vec))
     }
 
     #[inline]
-    fn serialize_unit_struct(self, _name: &'static str) -> Result<ValueNoObjOrArr> {
+    fn serialize_unit(self) -> Result<ValueNoObj> {
+        Ok(ValueNoObj::Null)
+    }
+
+    #[inline]
+    fn serialize_unit_struct(self, _name: &'static str) -> Result<ValueNoObj> {
         self.serialize_unit()
     }
 
@@ -182,12 +184,12 @@ impl serde::Serializer for Serializer {
         _name: &'static str,
         _variant_index: u32,
         variant: &'static str,
-    ) -> Result<ValueNoObjOrArr> {
+    ) -> Result<ValueNoObj> {
         self.serialize_str(variant)
     }
 
     #[inline]
-    fn serialize_newtype_struct<T>(self, _name: &'static str, value: &T) -> Result<ValueNoObjOrArr>
+    fn serialize_newtype_struct<T>(self, _name: &'static str, value: &T) -> Result<ValueNoObj>
     where
         T: ?Sized + Serialize,
     {
@@ -200,34 +202,33 @@ impl serde::Serializer for Serializer {
         _variant_index: u32,
         _variant: &'static str,
         _value: &T,
-    ) -> Result<ValueNoObjOrArr>
+    ) -> Result<ValueNoObj>
     where
         T: ?Sized + Serialize,
     {
         Err(serde::de::Error::invalid_type(
-            serde::de::Unexpected::NewtypeStruct,
-            &"must provide non-array | non-object",
+            Unexpected::Map,
+            &"`Object` isn't supported",
         ))
     }
 
     #[inline]
-    fn serialize_none(self) -> Result<ValueNoObjOrArr> {
+    fn serialize_none(self) -> Result<ValueNoObj> {
         self.serialize_unit()
     }
 
     #[inline]
-    fn serialize_some<T>(self, value: &T) -> Result<ValueNoObjOrArr>
+    fn serialize_some<T>(self, value: &T) -> Result<ValueNoObj>
     where
         T: ?Sized + Serialize,
     {
         value.serialize(self)
     }
 
-    fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq> {
-        Err(de::Error::invalid_type(
-            Unexpected::Seq,
-            &"`Seq` isn't supported",
-        ))
+    fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq> {
+        Ok(SerializeVec {
+            vec: Vec::with_capacity(len.unwrap_or(0)),
+        })
     }
 
     fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple> {
@@ -247,12 +248,11 @@ impl serde::Serializer for Serializer {
         _name: &'static str,
         _variant_index: u32,
         _variant: &'static str,
-        _len: usize,
+        len: usize,
     ) -> Result<Self::SerializeTupleVariant> {
-        Err(de::Error::invalid_type(
-            Unexpected::TupleVariant,
-            &"`Tuple` isn't supported",
-        ))
+        Ok(SerializeTupleVariant {
+            vec: Vec::with_capacity(len),
+        })
     }
 
     fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap> {
@@ -267,7 +267,7 @@ impl serde::Serializer for Serializer {
             #[cfg(feature = "arbitrary_precision")]
             crate::number::TOKEN => Ok(SerializeMap::Number { out_value: None }),
             #[cfg(feature = "raw_value")]
-            crate::raw::TOKEN => Ok(SerializeMap::RawValue { out_value: None }),
+            crate::raw::TOKEN => Ok(SerializeMap::RawValueNoObj { out_value: None }),
             _ => self.serialize_map(Some(len)),
         }
     }
@@ -285,55 +285,54 @@ impl serde::Serializer for Serializer {
         ))
     }
 
-    fn collect_str<T>(self, value: &T) -> Result<ValueNoObjOrArr>
+    fn collect_str<T>(self, value: &T) -> Result<ValueNoObj>
     where
         T: ?Sized + Display,
     {
-        Ok(ValueNoObjOrArr::String(value.to_string()))
+        Ok(ValueNoObj::String(value.to_string()))
     }
 }
 
-pub struct SerializeVec;
+pub struct SerializeVec {
+    vec: Vec<ValueNoObj>,
+}
 
-pub struct SerializeTupleVariant;
+pub struct SerializeTupleVariant {
+    vec: Vec<ValueNoObj>,
+}
 
 pub enum SerializeMap {
     Map {
-        map: Map<String, ValueNoObjOrArr>,
+        map: Map<String, ValueNoObj>,
         next_key: Option<String>,
     },
     #[cfg(feature = "arbitrary_precision")]
-    Number { out_value: Option<ValueNoObjOrArr> },
+    Number { out_value: Option<ValueNoObj> },
     #[cfg(feature = "raw_value")]
-    RawValue { out_value: Option<ValueNoObjOrArr> },
+    RawValueNoObj { out_value: Option<ValueNoObj> },
 }
 
 pub struct SerializeStructVariant;
 
 impl serde::ser::SerializeSeq for SerializeVec {
-    type Ok = ValueNoObjOrArr;
+    type Ok = ValueNoObj;
     type Error = Error;
 
-    fn serialize_element<T>(&mut self, _value: &T) -> Result<()>
+    fn serialize_element<T>(&mut self, value: &T) -> Result<()>
     where
         T: ?Sized + Serialize,
     {
-        Err(serde::de::Error::invalid_type(
-            serde::de::Unexpected::Seq,
-            &"must provide non-array | non-object",
-        ))
+        self.vec.push(tri!(to_value(value)));
+        Ok(())
     }
 
-    fn end(self) -> Result<ValueNoObjOrArr> {
-        Err(serde::de::Error::invalid_type(
-            serde::de::Unexpected::Seq,
-            &"must provide non-array | non-object",
-        ))
+    fn end(self) -> Result<ValueNoObj> {
+        Ok(ValueNoObj::Array(self.vec))
     }
 }
 
 impl serde::ser::SerializeTuple for SerializeVec {
-    type Ok = ValueNoObjOrArr;
+    type Ok = ValueNoObj;
     type Error = Error;
 
     fn serialize_element<T>(&mut self, value: &T) -> Result<()>
@@ -343,13 +342,13 @@ impl serde::ser::SerializeTuple for SerializeVec {
         serde::ser::SerializeSeq::serialize_element(self, value)
     }
 
-    fn end(self) -> Result<ValueNoObjOrArr> {
+    fn end(self) -> Result<ValueNoObj> {
         serde::ser::SerializeSeq::end(self)
     }
 }
 
 impl serde::ser::SerializeTupleStruct for SerializeVec {
-    type Ok = ValueNoObjOrArr;
+    type Ok = ValueNoObj;
     type Error = Error;
 
     fn serialize_field<T>(&mut self, value: &T) -> Result<()>
@@ -359,35 +358,30 @@ impl serde::ser::SerializeTupleStruct for SerializeVec {
         serde::ser::SerializeSeq::serialize_element(self, value)
     }
 
-    fn end(self) -> Result<ValueNoObjOrArr> {
+    fn end(self) -> Result<ValueNoObj> {
         serde::ser::SerializeSeq::end(self)
     }
 }
 
 impl serde::ser::SerializeTupleVariant for SerializeTupleVariant {
-    type Ok = ValueNoObjOrArr;
+    type Ok = ValueNoObj;
     type Error = Error;
 
-    fn serialize_field<T>(&mut self, _value: &T) -> Result<()>
+    fn serialize_field<T>(&mut self, value: &T) -> Result<()>
     where
         T: ?Sized + Serialize,
     {
-        Err(serde::de::Error::invalid_type(
-            serde::de::Unexpected::Map,
-            &"must provide non-array | non-object",
-        ))
+        self.vec.push(tri!(to_value(value)));
+        Ok(())
     }
 
-    fn end(self) -> Result<ValueNoObjOrArr> {
-        Err(serde::de::Error::invalid_type(
-            serde::de::Unexpected::Map,
-            &"must provide non-array | non-object",
-        ))
+    fn end(self) -> Result<ValueNoObj> {
+        Ok(ValueNoObj::Array(self.vec))
     }
 }
 
 impl serde::ser::SerializeMap for SerializeMap {
-    type Ok = ValueNoObjOrArr;
+    type Ok = ValueNoObj;
     type Error = Error;
 
     fn serialize_key<T>(&mut self, key: &T) -> Result<()>
@@ -402,7 +396,7 @@ impl serde::ser::SerializeMap for SerializeMap {
             #[cfg(feature = "arbitrary_precision")]
             SerializeMap::Number { .. } => unreachable!(),
             #[cfg(feature = "raw_value")]
-            SerializeMap::RawValue { .. } => unreachable!(),
+            SerializeMap::RawValueNoObj { .. } => unreachable!(),
         }
     }
 
@@ -418,20 +412,20 @@ impl serde::ser::SerializeMap for SerializeMap {
             #[cfg(feature = "arbitrary_precision")]
             SerializeMap::Number { .. } => unreachable!(),
             #[cfg(feature = "raw_value")]
-            SerializeMap::RawValue { .. } => unreachable!(),
+            SerializeMap::RawValueNoObj { .. } => unreachable!(),
         }
     }
 
-    fn end(self) -> Result<ValueNoObjOrArr> {
+    fn end(self) -> Result<ValueNoObj> {
         match self {
             SerializeMap::Map { .. } => Err(serde::de::Error::invalid_type(
-                serde::de::Unexpected::Map,
-                &"must provide non-array | non-object",
+                Unexpected::Map,
+                &"Object aren't supported",
             )),
             #[cfg(feature = "arbitrary_precision")]
             SerializeMap::Number { .. } => unreachable!(),
             #[cfg(feature = "raw_value")]
-            SerializeMap::RawValue { .. } => unreachable!(),
+            SerializeMap::RawValueNoObj { .. } => unreachable!(),
         }
     }
 }
@@ -631,7 +625,7 @@ impl serde::Serializer for MapKeySerializer {
 }
 
 impl serde::ser::SerializeStruct for SerializeMap {
-    type Ok = ValueNoObjOrArr;
+    type Ok = ValueNoObj;
     type Error = Error;
 
     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<()>
@@ -643,16 +637,16 @@ impl serde::ser::SerializeStruct for SerializeMap {
             #[cfg(feature = "arbitrary_precision")]
             SerializeMap::Number { out_value } => {
                 if key == crate::number::TOKEN {
-                    *out_value = Some(tri!(value.serialize(NumberValueEmitter)));
+                    *out_value = Some(tri!(value.serialize(NumberValueNoObjEmitter)));
                     Ok(())
                 } else {
                     Err(invalid_number())
                 }
             }
             #[cfg(feature = "raw_value")]
-            SerializeMap::RawValue { out_value } => {
+            SerializeMap::RawValueNoObj { out_value } => {
                 if key == crate::raw::TOKEN {
-                    *out_value = Some(tri!(value.serialize(RawValueEmitter)));
+                    *out_value = Some(tri!(value.serialize(RawValueNoObjEmitter)));
                     Ok(())
                 } else {
                     Err(invalid_raw_value())
@@ -661,7 +655,7 @@ impl serde::ser::SerializeStruct for SerializeMap {
         }
     }
 
-    fn end(self) -> Result<ValueNoObjOrArr> {
+    fn end(self) -> Result<ValueNoObj> {
         match self {
             SerializeMap::Map { .. } => serde::ser::SerializeMap::end(self),
             #[cfg(feature = "arbitrary_precision")]
@@ -669,7 +663,7 @@ impl serde::ser::SerializeStruct for SerializeMap {
                 Ok(out_value.expect("number value was not emitted"))
             }
             #[cfg(feature = "raw_value")]
-            SerializeMap::RawValue { out_value, .. } => {
+            SerializeMap::RawValueNoObj { out_value, .. } => {
                 Ok(out_value.expect("raw value was not emitted"))
             }
         }
@@ -677,7 +671,7 @@ impl serde::ser::SerializeStruct for SerializeMap {
 }
 
 impl serde::ser::SerializeStructVariant for SerializeStructVariant {
-    type Ok = ValueNoObjOrArr;
+    type Ok = ValueNoObj;
     type Error = Error;
 
     fn serialize_field<T>(&mut self, _key: &'static str, _value: &T) -> Result<()>
@@ -685,21 +679,21 @@ impl serde::ser::SerializeStructVariant for SerializeStructVariant {
         T: ?Sized + Serialize,
     {
         Err(serde::de::Error::invalid_type(
-            serde::de::Unexpected::Map,
-            &"must provide non-array | non-object",
+            Unexpected::Map,
+            &"Object unsupported",
         ))
     }
 
-    fn end(self) -> Result<ValueNoObjOrArr> {
+    fn end(self) -> Result<ValueNoObj> {
         Err(serde::de::Error::invalid_type(
-            serde::de::Unexpected::Map,
-            &"must provide non-array | non-object",
+            Unexpected::Map,
+            &"Object unsupported",
         ))
     }
 }
 
 #[cfg(feature = "arbitrary_precision")]
-struct NumberValueEmitter;
+struct NumberValueNoObjEmitter;
 
 #[cfg(feature = "arbitrary_precision")]
 fn invalid_number() -> Error {
@@ -707,91 +701,91 @@ fn invalid_number() -> Error {
 }
 
 #[cfg(feature = "arbitrary_precision")]
-impl serde::ser::Serializer for NumberValueEmitter {
-    type Ok = ValueNoObjOrArr;
+impl serde::ser::Serializer for NumberValueNoObjEmitter {
+    type Ok = ValueNoObj;
     type Error = Error;
 
-    type SerializeSeq = Impossible<ValueNoObjOrArr, Error>;
-    type SerializeTuple = Impossible<ValueNoObjOrArr, Error>;
-    type SerializeTupleStruct = Impossible<ValueNoObjOrArr, Error>;
-    type SerializeTupleVariant = Impossible<ValueNoObjOrArr, Error>;
-    type SerializeMap = Impossible<ValueNoObjOrArr, Error>;
-    type SerializeStruct = Impossible<ValueNoObjOrArr, Error>;
-    type SerializeStructVariant = Impossible<ValueNoObjOrArr, Error>;
+    type SerializeSeq = Impossible<ValueNoObj, Error>;
+    type SerializeTuple = Impossible<ValueNoObj, Error>;
+    type SerializeTupleStruct = Impossible<ValueNoObj, Error>;
+    type SerializeTupleVariant = Impossible<ValueNoObj, Error>;
+    type SerializeMap = Impossible<ValueNoObj, Error>;
+    type SerializeStruct = Impossible<ValueNoObj, Error>;
+    type SerializeStructVariant = Impossible<ValueNoObj, Error>;
 
-    fn serialize_bool(self, _v: bool) -> Result<ValueNoObjOrArr> {
+    fn serialize_bool(self, _v: bool) -> Result<ValueNoObj> {
         Err(invalid_number())
     }
 
-    fn serialize_i8(self, _v: i8) -> Result<ValueNoObjOrArr> {
+    fn serialize_i8(self, _v: i8) -> Result<ValueNoObj> {
         Err(invalid_number())
     }
 
-    fn serialize_i16(self, _v: i16) -> Result<ValueNoObjOrArr> {
+    fn serialize_i16(self, _v: i16) -> Result<ValueNoObj> {
         Err(invalid_number())
     }
 
-    fn serialize_i32(self, _v: i32) -> Result<ValueNoObjOrArr> {
+    fn serialize_i32(self, _v: i32) -> Result<ValueNoObj> {
         Err(invalid_number())
     }
 
-    fn serialize_i64(self, _v: i64) -> Result<ValueNoObjOrArr> {
+    fn serialize_i64(self, _v: i64) -> Result<ValueNoObj> {
         Err(invalid_number())
     }
 
-    fn serialize_u8(self, _v: u8) -> Result<ValueNoObjOrArr> {
+    fn serialize_u8(self, _v: u8) -> Result<ValueNoObj> {
         Err(invalid_number())
     }
 
-    fn serialize_u16(self, _v: u16) -> Result<ValueNoObjOrArr> {
+    fn serialize_u16(self, _v: u16) -> Result<ValueNoObj> {
         Err(invalid_number())
     }
 
-    fn serialize_u32(self, _v: u32) -> Result<ValueNoObjOrArr> {
+    fn serialize_u32(self, _v: u32) -> Result<ValueNoObj> {
         Err(invalid_number())
     }
 
-    fn serialize_u64(self, _v: u64) -> Result<ValueNoObjOrArr> {
+    fn serialize_u64(self, _v: u64) -> Result<ValueNoObj> {
         Err(invalid_number())
     }
 
-    fn serialize_f32(self, _v: f32) -> Result<ValueNoObjOrArr> {
+    fn serialize_f32(self, _v: f32) -> Result<ValueNoObj> {
         Err(invalid_number())
     }
 
-    fn serialize_f64(self, _v: f64) -> Result<ValueNoObjOrArr> {
+    fn serialize_f64(self, _v: f64) -> Result<ValueNoObj> {
         Err(invalid_number())
     }
 
-    fn serialize_char(self, _v: char) -> Result<ValueNoObjOrArr> {
+    fn serialize_char(self, _v: char) -> Result<ValueNoObj> {
         Err(invalid_number())
     }
 
-    fn serialize_str(self, value: &str) -> Result<ValueNoObjOrArr> {
+    fn serialize_str(self, value: &str) -> Result<ValueNoObj> {
         let n = tri!(value.to_owned().parse());
-        Ok(ValueNoObjOrArr::Number(n))
+        Ok(ValueNoObj::Number(n))
     }
 
-    fn serialize_bytes(self, _value: &[u8]) -> Result<ValueNoObjOrArr> {
+    fn serialize_bytes(self, _value: &[u8]) -> Result<ValueNoObj> {
         Err(invalid_number())
     }
 
-    fn serialize_none(self) -> Result<ValueNoObjOrArr> {
+    fn serialize_none(self) -> Result<ValueNoObj> {
         Err(invalid_number())
     }
 
-    fn serialize_some<T>(self, _value: &T) -> Result<ValueNoObjOrArr>
+    fn serialize_some<T>(self, _value: &T) -> Result<ValueNoObj>
     where
         T: ?Sized + Serialize,
     {
         Err(invalid_number())
     }
 
-    fn serialize_unit(self) -> Result<ValueNoObjOrArr> {
+    fn serialize_unit(self) -> Result<ValueNoObj> {
         Err(invalid_number())
     }
 
-    fn serialize_unit_struct(self, _name: &'static str) -> Result<ValueNoObjOrArr> {
+    fn serialize_unit_struct(self, _name: &'static str) -> Result<ValueNoObj> {
         Err(invalid_number())
     }
 
@@ -800,11 +794,11 @@ impl serde::ser::Serializer for NumberValueEmitter {
         _name: &'static str,
         _variant_index: u32,
         _variant: &'static str,
-    ) -> Result<ValueNoObjOrArr> {
+    ) -> Result<ValueNoObj> {
         Err(invalid_number())
     }
 
-    fn serialize_newtype_struct<T>(self, _name: &'static str, _value: &T) -> Result<ValueNoObjOrArr>
+    fn serialize_newtype_struct<T>(self, _name: &'static str, _value: &T) -> Result<ValueNoObj>
     where
         T: ?Sized + Serialize,
     {
@@ -817,7 +811,7 @@ impl serde::ser::Serializer for NumberValueEmitter {
         _variant_index: u32,
         _variant: &'static str,
         _value: &T,
-    ) -> Result<ValueNoObjOrArr>
+    ) -> Result<ValueNoObj>
     where
         T: ?Sized + Serialize,
     {
@@ -870,7 +864,7 @@ impl serde::ser::Serializer for NumberValueEmitter {
 }
 
 #[cfg(feature = "raw_value")]
-struct RawValueEmitter;
+struct RawValueNoObjEmitter;
 
 #[cfg(feature = "raw_value")]
 fn invalid_raw_value() -> Error {
@@ -878,90 +872,90 @@ fn invalid_raw_value() -> Error {
 }
 
 #[cfg(feature = "raw_value")]
-impl serde::ser::Serializer for RawValueEmitter {
-    type Ok = ValueNoObjOrArr;
+impl serde::ser::Serializer for RawValueNoObjEmitter {
+    type Ok = ValueNoObj;
     type Error = Error;
 
-    type SerializeSeq = Impossible<ValueNoObjOrArr, Error>;
-    type SerializeTuple = Impossible<ValueNoObjOrArr, Error>;
-    type SerializeTupleStruct = Impossible<ValueNoObjOrArr, Error>;
-    type SerializeTupleVariant = Impossible<ValueNoObjOrArr, Error>;
-    type SerializeMap = Impossible<ValueNoObjOrArr, Error>;
-    type SerializeStruct = Impossible<ValueNoObjOrArr, Error>;
-    type SerializeStructVariant = Impossible<ValueNoObjOrArr, Error>;
+    type SerializeSeq = Impossible<ValueNoObj, Error>;
+    type SerializeTuple = Impossible<ValueNoObj, Error>;
+    type SerializeTupleStruct = Impossible<ValueNoObj, Error>;
+    type SerializeTupleVariant = Impossible<ValueNoObj, Error>;
+    type SerializeMap = Impossible<ValueNoObj, Error>;
+    type SerializeStruct = Impossible<ValueNoObj, Error>;
+    type SerializeStructVariant = Impossible<ValueNoObj, Error>;
 
-    fn serialize_bool(self, _v: bool) -> Result<ValueNoObjOrArr> {
+    fn serialize_bool(self, _v: bool) -> Result<ValueNoObj> {
         Err(invalid_raw_value())
     }
 
-    fn serialize_i8(self, _v: i8) -> Result<ValueNoObjOrArr> {
+    fn serialize_i8(self, _v: i8) -> Result<ValueNoObj> {
         Err(invalid_raw_value())
     }
 
-    fn serialize_i16(self, _v: i16) -> Result<ValueNoObjOrArr> {
+    fn serialize_i16(self, _v: i16) -> Result<ValueNoObj> {
         Err(invalid_raw_value())
     }
 
-    fn serialize_i32(self, _v: i32) -> Result<ValueNoObjOrArr> {
+    fn serialize_i32(self, _v: i32) -> Result<ValueNoObj> {
         Err(invalid_raw_value())
     }
 
-    fn serialize_i64(self, _v: i64) -> Result<ValueNoObjOrArr> {
+    fn serialize_i64(self, _v: i64) -> Result<ValueNoObj> {
         Err(invalid_raw_value())
     }
 
-    fn serialize_u8(self, _v: u8) -> Result<ValueNoObjOrArr> {
+    fn serialize_u8(self, _v: u8) -> Result<ValueNoObj> {
         Err(invalid_raw_value())
     }
 
-    fn serialize_u16(self, _v: u16) -> Result<ValueNoObjOrArr> {
+    fn serialize_u16(self, _v: u16) -> Result<ValueNoObj> {
         Err(invalid_raw_value())
     }
 
-    fn serialize_u32(self, _v: u32) -> Result<ValueNoObjOrArr> {
+    fn serialize_u32(self, _v: u32) -> Result<ValueNoObj> {
         Err(invalid_raw_value())
     }
 
-    fn serialize_u64(self, _v: u64) -> Result<ValueNoObjOrArr> {
+    fn serialize_u64(self, _v: u64) -> Result<ValueNoObj> {
         Err(invalid_raw_value())
     }
 
-    fn serialize_f32(self, _v: f32) -> Result<ValueNoObjOrArr> {
+    fn serialize_f32(self, _v: f32) -> Result<ValueNoObj> {
         Err(invalid_raw_value())
     }
 
-    fn serialize_f64(self, _v: f64) -> Result<ValueNoObjOrArr> {
+    fn serialize_f64(self, _v: f64) -> Result<ValueNoObj> {
         Err(invalid_raw_value())
     }
 
-    fn serialize_char(self, _v: char) -> Result<ValueNoObjOrArr> {
+    fn serialize_char(self, _v: char) -> Result<ValueNoObj> {
         Err(invalid_raw_value())
     }
 
-    fn serialize_str(self, value: &str) -> Result<ValueNoObjOrArr> {
+    fn serialize_str(self, value: &str) -> Result<ValueNoObj> {
         crate::from_str(value)
     }
 
-    fn serialize_bytes(self, _value: &[u8]) -> Result<ValueNoObjOrArr> {
+    fn serialize_bytes(self, _value: &[u8]) -> Result<ValueNoObj> {
         Err(invalid_raw_value())
     }
 
-    fn serialize_none(self) -> Result<ValueNoObjOrArr> {
+    fn serialize_none(self) -> Result<ValueNoObj> {
         Err(invalid_raw_value())
     }
 
-    fn serialize_some<T>(self, _value: &T) -> Result<ValueNoObjOrArr>
+    fn serialize_some<T>(self, _value: &T) -> Result<ValueNoObj>
     where
         T: ?Sized + Serialize,
     {
         Err(invalid_raw_value())
     }
 
-    fn serialize_unit(self) -> Result<ValueNoObjOrArr> {
+    fn serialize_unit(self) -> Result<ValueNoObj> {
         Err(invalid_raw_value())
     }
 
-    fn serialize_unit_struct(self, _name: &'static str) -> Result<ValueNoObjOrArr> {
+    fn serialize_unit_struct(self, _name: &'static str) -> Result<ValueNoObj> {
         Err(invalid_raw_value())
     }
 
@@ -970,11 +964,11 @@ impl serde::ser::Serializer for RawValueEmitter {
         _name: &'static str,
         _variant_index: u32,
         _variant: &'static str,
-    ) -> Result<ValueNoObjOrArr> {
+    ) -> Result<ValueNoObj> {
         Err(invalid_raw_value())
     }
 
-    fn serialize_newtype_struct<T>(self, _name: &'static str, _value: &T) -> Result<ValueNoObjOrArr>
+    fn serialize_newtype_struct<T>(self, _name: &'static str, _value: &T) -> Result<ValueNoObj>
     where
         T: ?Sized + Serialize,
     {
@@ -987,7 +981,7 @@ impl serde::ser::Serializer for RawValueEmitter {
         _variant_index: u32,
         _variant: &'static str,
         _value: &T,
-    ) -> Result<ValueNoObjOrArr>
+    ) -> Result<ValueNoObj>
     where
         T: ?Sized + Serialize,
     {

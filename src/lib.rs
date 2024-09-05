@@ -414,12 +414,15 @@ mod macros;
 
 pub mod de;
 pub mod error;
+#[path = "value_no_obj_or_arr/map.rs"]
 pub mod map;
 #[cfg(feature = "std")]
 #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 pub mod ser;
 #[cfg(not(feature = "std"))]
 mod ser;
+pub mod value_no_obj;
+
 pub mod value_no_obj_or_arr;
 
 mod io;

@@ -1,7 +1,7 @@
+use super::ValueNoObj;
 use alloc::string::String;
+use core::fmt::{self, Display};
 use core::ops;
-
-use super::ValueNoObjOrArr;
 
 /// A type that can be used to index into a `serde_json::Value`.
 ///
@@ -35,52 +35,69 @@ use super::ValueNoObjOrArr;
 pub trait Index: private::Sealed {
     /// Return None if the key is not already in the array or object.
     #[doc(hidden)]
-    fn index_into<'v>(&self, v: &'v ValueNoObjOrArr) -> Option<&'v ValueNoObjOrArr>;
+    fn index_into<'v>(&self, v: &'v ValueNoObj) -> Option<&'v ValueNoObj>;
 
     /// Return None if the key is not already in the array or object.
     #[doc(hidden)]
-    fn index_into_mut<'v>(&self, v: &'v mut ValueNoObjOrArr) -> Option<&'v mut ValueNoObjOrArr>;
+    fn index_into_mut<'v>(&self, v: &'v mut ValueNoObj) -> Option<&'v mut ValueNoObj>;
 
     /// Panic if array index out of bounds. If key is not already in the object,
     /// insert it with a value of null. Panic if Value is a type that cannot be
     /// indexed into, except if Value is null then it can be treated as an empty
     /// object.
     #[doc(hidden)]
-    fn index_or_insert<'v>(&self, v: &'v mut ValueNoObjOrArr) -> &'v mut ValueNoObjOrArr;
+    fn index_or_insert<'v>(&self, v: &'v mut ValueNoObj) -> &'v mut ValueNoObj;
 }
 
 impl Index for usize {
-    fn index_into<'v>(&self, _: &'v ValueNoObjOrArr) -> Option<&'v ValueNoObjOrArr> {
-        unimplemented!()
+    fn index_into<'v>(&self, v: &'v ValueNoObj) -> Option<&'v ValueNoObj> {
+        match v {
+            ValueNoObj::Array(vec) => vec.get(*self),
+            _ => None,
+        }
     }
-    fn index_into_mut<'v>(&self, _: &'v mut ValueNoObjOrArr) -> Option<&'v mut ValueNoObjOrArr> {
-        unimplemented!()
+    fn index_into_mut<'v>(&self, v: &'v mut ValueNoObj) -> Option<&'v mut ValueNoObj> {
+        match v {
+            ValueNoObj::Array(vec) => vec.get_mut(*self),
+            _ => None,
+        }
     }
-    fn index_or_insert<'v>(&self, _: &'v mut ValueNoObjOrArr) -> &'v mut ValueNoObjOrArr {
-        unimplemented!()
+    fn index_or_insert<'v>(&self, v: &'v mut ValueNoObj) -> &'v mut ValueNoObj {
+        match v {
+            ValueNoObj::Array(vec) => {
+                let len = vec.len();
+                vec.get_mut(*self).unwrap_or_else(|| {
+                    panic!(
+                        "cannot access index {} of JSON array of length {}",
+                        self, len
+                    )
+                })
+            }
+            _ => panic!("cannot access index {} of JSON {}", self, Type(v)),
+        }
     }
 }
 
 impl Index for str {
-    fn index_into<'v>(&self, _: &'v ValueNoObjOrArr) -> Option<&'v ValueNoObjOrArr> {
-        unimplemented!()
+    fn index_into<'v>(&self, _v: &'v ValueNoObj) -> Option<&'v ValueNoObj> {
+        None
     }
-    fn index_into_mut<'v>(&self, _: &'v mut ValueNoObjOrArr) -> Option<&'v mut ValueNoObjOrArr> {
-        unimplemented!()
+    fn index_into_mut<'v>(&self, _v: &'v mut ValueNoObj) -> Option<&'v mut ValueNoObj> {
+        None
     }
-    fn index_or_insert<'v>(&self, _: &'v mut ValueNoObjOrArr) -> &'v mut ValueNoObjOrArr {
+    fn index_or_insert<'v>(&self, _v: &'v mut ValueNoObj) -> &'v mut ValueNoObj {
         unimplemented!()
     }
 }
 
 impl Index for String {
-    fn index_into<'v>(&self, v: &'v ValueNoObjOrArr) -> Option<&'v ValueNoObjOrArr> {
+    fn index_into<'v>(&self, v: &'v ValueNoObj) -> Option<&'v ValueNoObj> {
         self[..].index_into(v)
     }
-    fn index_into_mut<'v>(&self, v: &'v mut ValueNoObjOrArr) -> Option<&'v mut ValueNoObjOrArr> {
+    fn index_into_mut<'v>(&self, v: &'v mut ValueNoObj) -> Option<&'v mut ValueNoObj> {
         self[..].index_into_mut(v)
     }
-    fn index_or_insert<'v>(&self, v: &'v mut ValueNoObjOrArr) -> &'v mut ValueNoObjOrArr {
+    fn index_or_insert<'v>(&self, v: &'v mut ValueNoObj) -> &'v mut ValueNoObj {
         self[..].index_or_insert(v)
     }
 }
@@ -89,13 +106,13 @@ impl<T> Index for &T
 where
     T: ?Sized + Index,
 {
-    fn index_into<'v>(&self, v: &'v ValueNoObjOrArr) -> Option<&'v ValueNoObjOrArr> {
+    fn index_into<'v>(&self, v: &'v ValueNoObj) -> Option<&'v ValueNoObj> {
         (**self).index_into(v)
     }
-    fn index_into_mut<'v>(&self, v: &'v mut ValueNoObjOrArr) -> Option<&'v mut ValueNoObjOrArr> {
+    fn index_into_mut<'v>(&self, v: &'v mut ValueNoObj) -> Option<&'v mut ValueNoObj> {
         (**self).index_into_mut(v)
     }
-    fn index_or_insert<'v>(&self, v: &'v mut ValueNoObjOrArr) -> &'v mut ValueNoObjOrArr {
+    fn index_or_insert<'v>(&self, v: &'v mut ValueNoObj) -> &'v mut ValueNoObj {
         (**self).index_or_insert(v)
     }
 }
@@ -107,6 +124,21 @@ mod private {
     impl Sealed for str {}
     impl Sealed for alloc::string::String {}
     impl<'a, T> Sealed for &'a T where T: ?Sized + Sealed {}
+}
+
+/// Used in panic messages.
+struct Type<'a>(&'a ValueNoObj);
+
+impl<'a> Display for Type<'a> {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        match *self.0 {
+            ValueNoObj::Null => formatter.write_str("null"),
+            ValueNoObj::Bool(_) => formatter.write_str("boolean"),
+            ValueNoObj::Number(_) => formatter.write_str("number"),
+            ValueNoObj::String(_) => formatter.write_str("string"),
+            ValueNoObj::Array(_) => formatter.write_str("array"),
+        }
+    }
 }
 
 // The usual semantics of Index is to panic on invalid indexing.
@@ -128,11 +160,11 @@ mod private {
 // as_array, or match. The value of this impl is that it adds a way of working
 // with Value that is not well served by the existing approaches: concise and
 // careless and sometimes that is exactly what you want.
-impl<I> ops::Index<I> for ValueNoObjOrArr
+impl<I> ops::Index<I> for ValueNoObj
 where
     I: Index,
 {
-    type Output = ValueNoObjOrArr;
+    type Output = ValueNoObj;
 
     /// Index into a `serde_json::Value` using the syntax `value[0]` or
     /// `value["k"]`.
@@ -162,13 +194,13 @@ where
     /// assert_eq!(data["a"], json!(null)); // returns null for undefined values
     /// assert_eq!(data["a"]["b"], json!(null)); // does not panic
     /// ```
-    fn index(&self, index: I) -> &ValueNoObjOrArr {
-        static NULL: ValueNoObjOrArr = ValueNoObjOrArr::Null;
+    fn index(&self, index: I) -> &ValueNoObj {
+        static NULL: ValueNoObj = ValueNoObj::Null;
         index.index_into(self).unwrap_or(&NULL)
     }
 }
 
-impl<I> ops::IndexMut<I> for ValueNoObjOrArr
+impl<I> ops::IndexMut<I> for ValueNoObj
 where
     I: Index,
 {
@@ -205,7 +237,7 @@ where
     ///
     /// println!("{}", data);
     /// ```
-    fn index_mut(&mut self, index: I) -> &mut ValueNoObjOrArr {
+    fn index_mut(&mut self, index: I) -> &mut ValueNoObj {
         index.index_or_insert(self)
     }
 }

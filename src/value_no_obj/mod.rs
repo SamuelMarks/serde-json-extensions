@@ -91,6 +91,7 @@
 //! [from_reader]: crate::de::from_reader
 
 use alloc::string::String;
+use alloc::vec::Vec;
 use core::fmt::{self, Debug, Display};
 use core::mem;
 use core::str;
@@ -99,9 +100,13 @@ use serde::ser::Serialize;
 
 pub use self::index::Index;
 pub use self::ser::Serializer;
+
+#[path = "map.rs"]
+pub(crate) mod map;
+pub use map::Map;
+
 use crate::error::Error;
 use crate::io;
-pub use crate::map::Map;
 pub use crate::number::Number;
 
 #[cfg(feature = "raw_value")]
@@ -112,7 +117,7 @@ pub use crate::raw::{to_raw_value, RawValue};
 ///
 /// See the [`serde_json::value` module documentation](self) for usage examples.
 #[derive(Clone, Eq, PartialEq, Hash)]
-pub enum ValueNoObjOrArr {
+pub enum ValueNoObj {
     /// Represents a JSON null value.
     ///
     /// ```
@@ -148,20 +153,33 @@ pub enum ValueNoObjOrArr {
     /// let v = json!("a string");
     /// ```
     String(String),
+
+    /// Represents a JSON array.
+    ///
+    /// ```
+    /// # use serde_json::json;
+    /// #
+    /// let v = json!(["an", "array"]);
+    /// ```
+    Array(Vec<ValueNoObj>),
 }
 
-impl Debug for ValueNoObjOrArr {
+impl Debug for ValueNoObj {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ValueNoObjOrArr::Null => formatter.write_str("Null"),
-            ValueNoObjOrArr::Bool(boolean) => write!(formatter, "Bool({})", boolean),
-            ValueNoObjOrArr::Number(number) => Debug::fmt(number, formatter),
-            ValueNoObjOrArr::String(string) => write!(formatter, "String({:?})", string),
+            ValueNoObj::Null => formatter.write_str("Null"),
+            ValueNoObj::Bool(boolean) => write!(formatter, "Bool({})", boolean),
+            ValueNoObj::Number(number) => Debug::fmt(number, formatter),
+            ValueNoObj::String(string) => write!(formatter, "String({:?})", string),
+            ValueNoObj::Array(vec) => {
+                tri!(formatter.write_str("Array "));
+                Debug::fmt(vec, formatter)
+            }
         }
     }
 }
 
-impl Display for ValueNoObjOrArr {
+impl Display for ValueNoObj {
     /// Display a JSON value as a string.
     ///
     /// ```
@@ -223,7 +241,14 @@ impl Display for ValueNoObjOrArr {
     }
 }
 
-impl ValueNoObjOrArr {
+fn parse_index(s: &str) -> Option<usize> {
+    if s.starts_with('+') || (s.starts_with('0') && s.len() != 1) {
+        return None;
+    }
+    s.parse().ok()
+}
+
+impl ValueNoObj {
     /// Index into a JSON array or map. A string index can be used to access a
     /// value in a map, and a usize index can be used to access an element of an
     /// array.
@@ -262,7 +287,7 @@ impl ValueNoObjOrArr {
     /// assert_eq!(object["D"], json!(null));
     /// assert_eq!(object[0]["x"]["y"]["z"], json!(null));
     /// ```
-    pub fn get<I: Index>(&self, index: I) -> Option<&ValueNoObjOrArr> {
+    pub fn get<I: Index>(&self, index: I) -> Option<&ValueNoObj> {
         index.index_into(self)
     }
 
@@ -284,8 +309,121 @@ impl ValueNoObjOrArr {
     /// let mut array = json!([ "A", "B", "C" ]);
     /// *array.get_mut(2).unwrap() = json!("D");
     /// ```
-    pub fn get_mut<I: Index>(&mut self, index: I) -> Option<&mut ValueNoObjOrArr> {
+    pub fn get_mut<I: Index>(&mut self, index: I) -> Option<&mut ValueNoObj> {
         index.index_into_mut(self)
+    }
+
+    /// Returns true if the `Value` is an Object. Returns false otherwise.
+    ///
+    /// For any Value on which `is_object` returns true, `as_object` and
+    /// `as_object_mut` are guaranteed to return the map representation of the
+    /// object.
+    ///
+    /// ```
+    /// # use serde_json::json;
+    /// #
+    /// let obj = json!({ "a": { "nested": true }, "b": ["an", "array"] });
+    ///
+    /// assert!(obj.is_object());
+    /// assert!(obj["a"].is_object());
+    ///
+    /// // array, not an object
+    /// assert!(!obj["b"].is_object());
+    /// ```
+    pub fn is_object(&self) -> bool {
+        self.as_object().is_some()
+    }
+
+    /// If the `Value` is an Object, returns the associated Map. Returns None
+    /// otherwise.
+    ///
+    /// ```
+    /// # use serde_json::json;
+    /// #
+    /// let v = json!({ "a": { "nested": true }, "b": ["an", "array"] });
+    ///
+    /// // The length of `{"nested": true}` is 1 entry.
+    /// assert_eq!(v["a"].as_object().unwrap().len(), 1);
+    ///
+    /// // The array `["an", "array"]` is not an object.
+    /// assert_eq!(v["b"].as_object(), None);
+    /// ```
+    pub fn as_object(&self) -> Option<&Map<String, ValueNoObj>> {
+        None
+    }
+
+    /// If the `Value` is an Object, returns the associated mutable Map.
+    /// Returns None otherwise.
+    ///
+    /// ```
+    /// # use serde_json::json;
+    /// #
+    /// let mut v = json!({ "a": { "nested": true } });
+    ///
+    /// v["a"].as_object_mut().unwrap().clear();
+    /// assert_eq!(v, json!({ "a": {} }));
+    /// ```
+    pub fn as_object_mut(&mut self) -> Option<&mut Map<String, ValueNoObj>> {
+        None
+    }
+
+    /// Returns true if the `Value` is an Array. Returns false otherwise.
+    ///
+    /// For any Value on which `is_array` returns true, `as_array` and
+    /// `as_array_mut` are guaranteed to return the vector representing the
+    /// array.
+    ///
+    /// ```
+    /// # use serde_json::json;
+    /// #
+    /// let obj = json!({ "a": ["an", "array"], "b": { "an": "object" } });
+    ///
+    /// assert!(obj["a"].is_array());
+    ///
+    /// // an object, not an array
+    /// assert!(!obj["b"].is_array());
+    /// ```
+    pub fn is_array(&self) -> bool {
+        self.as_array().is_some()
+    }
+
+    /// If the `Value` is an Array, returns the associated vector. Returns None
+    /// otherwise.
+    ///
+    /// ```
+    /// # use serde_json::json;
+    /// #
+    /// let v = json!({ "a": ["an", "array"], "b": { "an": "object" } });
+    ///
+    /// // The length of `["an", "array"]` is 2 elements.
+    /// assert_eq!(v["a"].as_array().unwrap().len(), 2);
+    ///
+    /// // The object `{"an": "object"}` is not an array.
+    /// assert_eq!(v["b"].as_array(), None);
+    /// ```
+    pub fn as_array(&self) -> Option<&Vec<ValueNoObj>> {
+        match self {
+            ValueNoObj::Array(array) => Some(array),
+            _ => None,
+        }
+    }
+
+    /// If the `Value` is an Array, returns the associated mutable vector.
+    /// Returns None otherwise.
+    ///
+    /// ```
+    /// # use serde_json::json;
+    /// #
+    /// let mut v = json!({ "a": ["an", "array"] });
+    ///
+    /// v["a"].as_array_mut().unwrap().clear();
+    /// assert_eq!(v, json!({ "a": [] }));
+    /// ```
+    pub fn as_array_mut(&mut self) -> Option<&mut Vec<ValueNoObj>> {
+        match self {
+            ValueNoObj::Array(list) => Some(list),
+            _ => None,
+        }
     }
 
     /// Returns true if the `Value` is a String. Returns false otherwise.
@@ -332,7 +470,7 @@ impl ValueNoObjOrArr {
     /// ```
     pub fn as_str(&self) -> Option<&str> {
         match self {
-            ValueNoObjOrArr::String(s) => Some(s),
+            ValueNoObj::String(s) => Some(s),
             _ => None,
         }
     }
@@ -351,7 +489,7 @@ impl ValueNoObjOrArr {
     /// ```
     pub fn is_number(&self) -> bool {
         match *self {
-            ValueNoObjOrArr::Number(_) => true,
+            ValueNoObj::Number(_) => true,
             _ => false,
         }
     }
@@ -373,7 +511,7 @@ impl ValueNoObjOrArr {
     /// ```
     pub fn as_number(&self) -> Option<&Number> {
         match self {
-            ValueNoObjOrArr::Number(number) => Some(number),
+            ValueNoObj::Number(number) => Some(number),
             _ => None,
         }
     }
@@ -400,7 +538,7 @@ impl ValueNoObjOrArr {
     /// ```
     pub fn is_i64(&self) -> bool {
         match self {
-            ValueNoObjOrArr::Number(n) => n.is_i64(),
+            ValueNoObj::Number(n) => n.is_i64(),
             _ => false,
         }
     }
@@ -425,7 +563,7 @@ impl ValueNoObjOrArr {
     /// ```
     pub fn is_u64(&self) -> bool {
         match self {
-            ValueNoObjOrArr::Number(n) => n.is_u64(),
+            ValueNoObj::Number(n) => n.is_u64(),
             _ => false,
         }
     }
@@ -451,7 +589,7 @@ impl ValueNoObjOrArr {
     /// ```
     pub fn is_f64(&self) -> bool {
         match self {
-            ValueNoObjOrArr::Number(n) => n.is_f64(),
+            ValueNoObj::Number(n) => n.is_f64(),
             _ => false,
         }
     }
@@ -471,7 +609,7 @@ impl ValueNoObjOrArr {
     /// ```
     pub fn as_i64(&self) -> Option<i64> {
         match self {
-            ValueNoObjOrArr::Number(n) => n.as_i64(),
+            ValueNoObj::Number(n) => n.as_i64(),
             _ => None,
         }
     }
@@ -490,7 +628,7 @@ impl ValueNoObjOrArr {
     /// ```
     pub fn as_u64(&self) -> Option<u64> {
         match self {
-            ValueNoObjOrArr::Number(n) => n.as_u64(),
+            ValueNoObj::Number(n) => n.as_u64(),
             _ => None,
         }
     }
@@ -509,7 +647,7 @@ impl ValueNoObjOrArr {
     /// ```
     pub fn as_f64(&self) -> Option<f64> {
         match self {
-            ValueNoObjOrArr::Number(n) => n.as_f64(),
+            ValueNoObj::Number(n) => n.as_f64(),
             _ => None,
         }
     }
@@ -548,7 +686,7 @@ impl ValueNoObjOrArr {
     /// ```
     pub fn as_bool(&self) -> Option<bool> {
         match *self {
-            ValueNoObjOrArr::Bool(b) => Some(b),
+            ValueNoObj::Bool(b) => Some(b),
             _ => None,
         }
     }
@@ -586,7 +724,7 @@ impl ValueNoObjOrArr {
     /// ```
     pub fn as_null(&self) -> Option<()> {
         match *self {
-            ValueNoObjOrArr::Null => Some(()),
+            ValueNoObj::Null => Some(()),
             _ => None,
         }
     }
@@ -617,7 +755,7 @@ impl ValueNoObjOrArr {
     /// assert_eq!(data.pointer("/x/y/1").unwrap(), &json!("zz"));
     /// assert_eq!(data.pointer("/a/b/c"), None);
     /// ```
-    pub fn pointer(&self, pointer: &str) -> Option<&ValueNoObjOrArr> {
+    pub fn pointer(&self, pointer: &str) -> Option<&ValueNoObj> {
         if pointer.is_empty() {
             return Some(self);
         }
@@ -628,7 +766,8 @@ impl ValueNoObjOrArr {
             .split('/')
             .skip(1)
             .map(|x| x.replace("~1", "/").replace("~0", "~"))
-            .try_fold(self, |target, _token| match target {
+            .try_fold(self, |target, token| match target {
+                ValueNoObj::Array(list) => parse_index(&token).and_then(|x| list.get(x)),
                 _ => None,
             })
     }
@@ -670,7 +809,7 @@ impl ValueNoObjOrArr {
     ///     assert_eq!(value.pointer("/x").unwrap(), &Value::Null);
     /// }
     /// ```
-    pub fn pointer_mut(&mut self, pointer: &str) -> Option<&mut ValueNoObjOrArr> {
+    pub fn pointer_mut(&mut self, pointer: &str) -> Option<&mut ValueNoObj> {
         if pointer.is_empty() {
             return Some(self);
         }
@@ -681,7 +820,8 @@ impl ValueNoObjOrArr {
             .split('/')
             .skip(1)
             .map(|x| x.replace("~1", "/").replace("~0", "~"))
-            .try_fold(self, |target, _token| match target {
+            .try_fold(self, |target, token| match target {
+                ValueNoObj::Array(list) => parse_index(&token).and_then(move |x| list.get_mut(x)),
                 _ => None,
             })
     }
@@ -695,8 +835,8 @@ impl ValueNoObjOrArr {
     /// assert_eq!(v["x"].take(), json!("y"));
     /// assert_eq!(v, json!({ "x": null }));
     /// ```
-    pub fn take(&mut self) -> ValueNoObjOrArr {
-        mem::replace(self, ValueNoObjOrArr::Null)
+    pub fn take(&mut self) -> ValueNoObj {
+        mem::replace(self, ValueNoObj::Null)
     }
 }
 
@@ -729,9 +869,9 @@ impl ValueNoObjOrArr {
 /// #
 /// # try_main().unwrap()
 /// ```
-impl Default for ValueNoObjOrArr {
-    fn default() -> ValueNoObjOrArr {
-        ValueNoObjOrArr::Null
+impl Default for ValueNoObj {
+    fn default() -> ValueNoObj {
+        ValueNoObj::Null
     }
 }
 
@@ -796,7 +936,7 @@ mod ser;
 /// ```
 // Taking by value is more friendly to iterator adapters, option and result
 // consumers, etc. See https://github.com/serde-rs/json/pull/149.
-pub fn to_value<T>(value: T) -> Result<ValueNoObjOrArr, Error>
+pub fn to_value<T>(value: T) -> Result<ValueNoObj, Error>
 where
     T: Serialize,
 {
@@ -838,7 +978,7 @@ where
 /// is wrong with the data, for example required struct fields are missing from
 /// the JSON map or some number is too big to fit in the expected primitive
 /// type.
-pub fn from_value<T>(value: ValueNoObjOrArr) -> Result<T, Error>
+pub fn from_value<T>(value: ValueNoObj) -> Result<T, Error>
 where
     T: DeserializeOwned,
 {
