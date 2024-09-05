@@ -108,44 +108,39 @@ pub use crate::number::Number;
 #[cfg_attr(docsrs, doc(cfg(feature = "raw_value")))]
 pub use crate::raw::{to_raw_value, RawValue};
 
-/// Represents any valid JSON value.
+/// Represents any valid JSON value *except* arrays and objects.
 ///
 /// See the [`serde_json::value` module documentation](self) for usage examples.
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub enum ValueNoObjOrArr {
     /// Represents a JSON null value.
     ///
-    /// ```
-    /// # use serde_json::json;
-    /// #
-    /// let v = json!(null);
+    /// ```json
+    /// null
     /// ```
     Null,
 
     /// Represents a JSON boolean.
     ///
+    /// ```json
+    /// true
     /// ```
-    /// # use serde_json::json;
-    /// #
-    /// let v = json!(true);
+    /// ```json
+    /// false
     /// ```
     Bool(bool),
 
     /// Represents a JSON number, whether integer or floating point.
     ///
-    /// ```
-    /// # use serde_json::json;
-    /// #
-    /// let v = json!(12.5);
+    /// ```json
+    /// 12.5
     /// ```
     Number(Number),
 
     /// Represents a JSON string.
     ///
-    /// ```
-    /// # use serde_json::json;
-    /// #
-    /// let v = json!("a string");
+    /// ```json
+    /// "foo"
     /// ```
     String(String),
 }

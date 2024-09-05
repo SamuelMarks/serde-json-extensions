@@ -396,7 +396,7 @@ pub use crate::ser::{to_string, to_string_pretty, to_vec, to_vec_pretty};
 #[doc(inline)]
 pub use crate::ser::{to_writer, to_writer_pretty, Serializer};
 #[doc(inline)]
-pub use crate::value_no_obj_or_arr::{from_value, to_value, Map, Number, ValueNoObjOrArr};
+pub use crate::value_no_obj_or_arr::{from_value, to_value, Map, Number};
 
 // We only use our own error type; no need for From conversions provided by the
 // standard library's try! macro. This reduces lines of LLVM IR by 4%.
@@ -435,3 +435,6 @@ mod read;
 
 #[cfg(feature = "raw_value")]
 mod raw;
+
+pub use value_no_obj::ValueNoObj;
+pub use value_no_obj_or_arr::ValueNoObjOrArr;
