@@ -430,7 +430,7 @@ mod io;
 mod iter;
 #[cfg(feature = "float_roundtrip")]
 mod lexical;
-mod number;
+pub mod number;
 mod read;
 
 #[cfg(feature = "raw_value")]
