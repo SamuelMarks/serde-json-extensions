@@ -25,7 +25,7 @@ pub struct Number {
 
 #[cfg(not(feature = "arbitrary_precision"))]
 #[derive(Copy, Clone)]
-enum N {
+pub enum N {
     PosInt(u64),
     /// Always less than zero.
     NegInt(i64),
@@ -70,7 +70,7 @@ impl Hash for N {
 }
 
 #[cfg(feature = "arbitrary_precision")]
-type N = String;
+pub type N = String;
 
 impl Number {
     /// Returns true if the `Number` is an integer between `i64::MIN` and
